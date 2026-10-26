@@ -57,8 +57,8 @@ const AdminApplications = () => {
           setApplications(Array.isArray(appRes.data) ? appRes.data : []);
           setOpportunitiesCount(Array.isArray(oppRes.data) ? oppRes.data.length : 0);
         }
-      } catch (err) {
-        console.error("Error loading applications from API:", err);
+      } catch {
+        // Handled via empty state in UI
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -356,32 +356,42 @@ const AdminApplications = () => {
                           </div>
                         </td>
 
-                        {/* 6. Resume Link (Clickable) */}
+                        {/* 6. Resume Link / Download (Clickable) */}
                         <td>
                           {app.resumeLink ? (
-                            <a
-                              href={app.resumeLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="resume-pill-link"
-                              title="Open candidate resume in new tab"
-                            >
-                              <span>View Resume</span>
-                              <svg
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                <polyline points="15 3 21 3 21 9" />
-                                <line x1="10" y1="14" x2="21" y2="3" />
-                              </svg>
-                            </a>
+                            (() => {
+                              const apiBase = API.defaults.baseURL || "http://localhost:5000/api";
+                              const serverOrigin = apiBase.replace(/\/api\/?$/, "");
+                              const fullResumeUrl = app.resumeLink.startsWith("http")
+                                ? app.resumeLink
+                                : `${serverOrigin}${app.resumeLink.startsWith("/") ? "" : "/"}${app.resumeLink}`;
+
+                              return (
+                                <a
+                                  href={fullResumeUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="resume-pill-link"
+                                  title={app.resumeOriginalName ? `Download ${app.resumeOriginalName}` : "Download or view candidate resume"}
+                                >
+                                  <span>{app.resumeFilePath || app.resumeLink.startsWith("/uploads") ? "Download Resume" : "View Resume"}</span>
+                                  <svg
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                  </svg>
+                                </a>
+                              );
+                            })()
                           ) : (
                             <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
                               None provided

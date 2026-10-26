@@ -7,6 +7,11 @@ const applicationSchema = new mongoose.Schema(
       ref: "Opportunity",
       required: [true, "Opportunity ID is required"],
     },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
     applicantName: {
       type: String,
       required: [true, "Applicant name is required"],
@@ -28,6 +33,16 @@ const applicationSchema = new mongoose.Schema(
       trim: true,
     },
     resumeLink: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    resumeFilePath: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    resumeOriginalName: {
       type: String,
       trim: true,
       default: "",

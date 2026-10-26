@@ -73,7 +73,6 @@ const OpportunityList = () => {
           return;
         }
         if (isMounted) {
-          console.error("Failed to fetch opportunities from API:", err);
           const errMsg =
             err.response?.data?.message ||
             (err.code === "ERR_NETWORK"

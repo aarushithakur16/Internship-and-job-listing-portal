@@ -2,15 +2,27 @@ const mongoose = require("mongoose");
 const Application = require("../models/Application");
 const Opportunity = require("../models/Opportunity");
 const { sampleOpportunities } = require("../seed");
+const { sendApplicationEmail } = require("../utils/sendEmail");
 
 // In-memory applications store
 const inMemoryApplications = [];
 
-// @desc    Submit a new application
+// @desc    Submit a new application (supports multipart/form-data with resume file)
 // @route   POST /api/applications
 const submitApplication = async (req, res) => {
   try {
-    const { opportunityId, applicantName, email, phone, resumeLink } = req.body;
+    const { opportunityId, applicantName, email, phone } = req.body;
+    let resumeLink = req.body.resumeLink ? req.body.resumeLink.trim() : "";
+    let resumeFilePath = "";
+    let resumeOriginalName = "";
+
+    // If multer handled an uploaded resume file
+    if (req.file) {
+      resumeFilePath = req.file.path;
+      resumeOriginalName = req.file.originalname;
+      // Statically servable link
+      resumeLink = `/uploads/${req.file.filename}`;
+    }
 
     // Validate required fields
     if (!opportunityId || !applicantName || !email || !phone) {
@@ -26,28 +38,43 @@ const submitApplication = async (req, res) => {
       return res.status(400).json({ message: "Please provide a valid email address" });
     }
 
+    const userId = req.user ? req.user.id : null;
     const isMongoConnected = mongoose.connection.readyState === 1;
 
+    let opportunityTitle = "Opportunity";
+    let companyName = "Company";
+
     if (isMongoConnected) {
-      // Validate opportunityId format
       if (!mongoose.Types.ObjectId.isValid(opportunityId)) {
         return res.status(400).json({ message: "Invalid opportunity ID format" });
       }
 
-      // Check if the opportunity exists
       const opportunity = await Opportunity.findById(opportunityId);
       if (!opportunity) {
         return res.status(404).json({ message: "Opportunity not found" });
       }
 
-      // Save the application to MongoDB
+      opportunityTitle = opportunity.title;
+      companyName = opportunity.companyName;
+
       const application = await Application.create({
         opportunityId,
+        userId: userId && mongoose.Types.ObjectId.isValid(userId) ? userId : undefined,
         applicantName: applicantName.trim(),
         email: email.trim().toLowerCase(),
         phone: phone.trim(),
-        resumeLink: resumeLink ? resumeLink.trim() : "",
+        resumeLink,
+        resumeFilePath,
+        resumeOriginalName,
       });
+
+      // Send email notification in background (non-blocking)
+      sendApplicationEmail({
+        to: email.trim().toLowerCase(),
+        applicantName: applicantName.trim(),
+        opportunityTitle,
+        companyName,
+      }).catch(() => {});
 
       return res.status(201).json({
         message: "Application submitted successfully",
@@ -60,19 +87,35 @@ const submitApplication = async (req, res) => {
       (opp) => opp._id === opportunityId || String(opp.id) === opportunityId
     );
 
+    if (opportunity) {
+      opportunityTitle = opportunity.title;
+      companyName = opportunity.companyName;
+    }
+
     const newApp = {
       _id: new mongoose.Types.ObjectId().toString(),
       opportunityId,
+      userId,
       applicantName: applicantName.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
-      resumeLink: resumeLink ? resumeLink.trim() : "",
+      resumeLink,
+      resumeFilePath,
+      resumeOriginalName,
       submittedAt: new Date().toISOString(),
-      opportunityTitle: opportunity ? opportunity.title : "Application Submission",
-      companyName: opportunity ? opportunity.companyName : "Partner Company",
+      opportunityTitle,
+      companyName,
     };
 
     inMemoryApplications.unshift(newApp);
+
+    // Send email notification in background
+    sendApplicationEmail({
+      to: email.trim().toLowerCase(),
+      applicantName: applicantName.trim(),
+      opportunityTitle,
+      companyName,
+    }).catch(() => {});
 
     return res.status(201).json({
       message: "Application submitted successfully",
@@ -83,7 +126,7 @@ const submitApplication = async (req, res) => {
   }
 };
 
-// @desc    Get all applications with linked opportunity populated
+// @desc    Get all applications with linked opportunity populated (Admin only)
 // @route   GET /api/applications
 const getApplications = async (req, res) => {
   try {

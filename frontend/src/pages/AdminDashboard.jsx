@@ -93,9 +93,8 @@ const AdminDashboard = () => {
           setOpportunities(Array.isArray(oppRes.data) ? oppRes.data : []);
           setApplications(Array.isArray(appRes.data) ? appRes.data : []);
         }
-      } catch (err) {
+      } catch {
         if (isMounted) {
-          console.error("Failed to load admin data:", err);
           setToast({
             isOpen: true,
             message: "Failed to fetch latest data from the server",
@@ -207,7 +206,6 @@ const AdminDashboard = () => {
       // Refresh list after action
       triggerRefresh();
     } catch (err) {
-      console.error("Save error:", err);
       const msg = err.response?.data?.message || "Failed to save opportunity.";
       showToast(msg, "error");
     } finally {
@@ -229,7 +227,6 @@ const AdminDashboard = () => {
       // Refresh list after delete
       triggerRefresh();
     } catch (err) {
-      console.error("Delete error:", err);
       const msg = err.response?.data?.message || "Failed to delete opportunity.";
       showToast(msg, "error");
     } finally {

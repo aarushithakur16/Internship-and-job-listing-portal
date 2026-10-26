@@ -60,7 +60,6 @@ const OpportunityDetails = () => {
         }
       } catch (err) {
         if (!isMounted) return;
-        console.error("Error fetching opportunity details:", err);
         const status = err.response?.status;
         const message =
           err.response?.data?.message ||
