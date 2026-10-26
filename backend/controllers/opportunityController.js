@@ -1,30 +1,79 @@
 const mongoose = require("mongoose");
 const Opportunity = require("../models/Opportunity");
+const { sampleOpportunities } = require("../seed");
+
+// In-memory fallback store initialized with seeded opportunities
+let inMemoryOpportunities = sampleOpportunities.map((opp, idx) => ({
+  ...opp,
+  _id: opp._id || `65f00000000000000000000${idx + 1}`,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+}));
+
+// Helper to escape regex special characters
+const escapeRegex = (string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
 
 // @desc    Get all opportunities with optional search & domain filter
 // @route   GET /api/opportunities
 const getOpportunities = async (req, res) => {
   try {
     const { search, domain } = req.query;
-    let query = {};
+    const isMongoConnected = mongoose.connection.readyState === 1;
 
-    // Filter by domain if provided (case-insensitive exact match)
-    if (domain && domain.trim() !== "") {
-      query.domain = { $regex: new RegExp(`^${domain.trim()}$`, "i") };
+    if (isMongoConnected) {
+      let query = {};
+
+      // Filter by domain if provided (case-insensitive, ignore "all")
+      if (domain && domain.trim() !== "" && domain.trim().toLowerCase() !== "all") {
+        query.domain = { $regex: new RegExp(`^${escapeRegex(domain.trim())}$`, "i") };
+      }
+
+      // Search keyword in title, companyName, description, location, or experience
+      if (search && search.trim() !== "") {
+        const searchRegex = { $regex: escapeRegex(search.trim()), $options: "i" };
+        query.$or = [
+          { title: searchRegex },
+          { companyName: searchRegex },
+          { description: searchRegex },
+          { location: searchRegex },
+          { domain: searchRegex },
+          { experience: searchRegex },
+        ];
+      }
+
+      const opportunities = await Opportunity.find(query).sort({ createdAt: -1 });
+      return res.status(200).json(opportunities);
     }
 
-    // Search keyword in title, companyName, or description
+    // In-memory fallback mode
+    let results = [...inMemoryOpportunities];
+
+    // Filter by domain
+    if (domain && domain.trim() !== "" && domain.trim().toLowerCase() !== "all") {
+      const targetDomain = domain.trim().toLowerCase();
+      results = results.filter(
+        (item) => item.domain && item.domain.toLowerCase() === targetDomain
+      );
+    }
+
+    // Filter by search keyword
     if (search && search.trim() !== "") {
-      const searchRegex = { $regex: search.trim(), $options: "i" };
-      query.$or = [
-        { title: searchRegex },
-        { companyName: searchRegex },
-        { description: searchRegex },
-      ];
+      const q = search.trim().toLowerCase();
+      results = results.filter((item) => {
+        return (
+          (item.title && item.title.toLowerCase().includes(q)) ||
+          (item.companyName && item.companyName.toLowerCase().includes(q)) ||
+          (item.description && item.description.toLowerCase().includes(q)) ||
+          (item.location && item.location.toLowerCase().includes(q)) ||
+          (item.domain && item.domain.toLowerCase().includes(q)) ||
+          (item.experience && item.experience.toLowerCase().includes(q))
+        );
+      });
     }
 
-    const opportunities = await Opportunity.find(query).sort({ createdAt: -1 });
-    return res.status(200).json(opportunities);
+    return res.status(200).json(results);
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -36,11 +85,30 @@ const getOpportunityById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid opportunity ID format" });
+    if (!id || id.trim() === "") {
+      return res.status(400).json({ message: "Opportunity ID is required" });
     }
 
-    const opportunity = await Opportunity.findById(id);
+    const isMongoConnected = mongoose.connection.readyState === 1;
+
+    if (isMongoConnected) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: "Invalid opportunity ID format" });
+      }
+
+      const opportunity = await Opportunity.findById(id);
+
+      if (!opportunity) {
+        return res.status(404).json({ message: "Opportunity not found" });
+      }
+
+      return res.status(200).json(opportunity);
+    }
+
+    // In-memory fallback mode
+    const opportunity = inMemoryOpportunities.find(
+      (item) => item._id === id || String(item.id) === id
+    );
 
     if (!opportunity) {
       return res.status(404).json({ message: "Opportunity not found" });
@@ -66,7 +134,6 @@ const createOpportunity = async (req, res) => {
       applicationLink,
     } = req.body;
 
-    // Check required fields
     if (
       !title ||
       !companyName ||
@@ -82,7 +149,25 @@ const createOpportunity = async (req, res) => {
       });
     }
 
-    const newOpportunity = await Opportunity.create({
+    const isMongoConnected = mongoose.connection.readyState === 1;
+
+    if (isMongoConnected) {
+      const newOpportunity = await Opportunity.create({
+        title,
+        companyName,
+        domain,
+        location,
+        experience,
+        description,
+        applicationLink,
+      });
+
+      return res.status(201).json(newOpportunity);
+    }
+
+    // In-memory fallback
+    const newOpportunity = {
+      _id: new mongoose.Types.ObjectId().toString(),
       title,
       companyName,
       domain,
@@ -90,8 +175,11 @@ const createOpportunity = async (req, res) => {
       experience,
       description,
       applicationLink,
-    });
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
+    inMemoryOpportunities.unshift(newOpportunity);
     return res.status(201).json(newOpportunity);
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });
@@ -103,25 +191,44 @@ const createOpportunity = async (req, res) => {
 const updateOpportunity = async (req, res) => {
   try {
     const { id } = req.params;
+    const isMongoConnected = mongoose.connection.readyState === 1;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid opportunity ID format" });
+    if (isMongoConnected) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: "Invalid opportunity ID format" });
+      }
+
+      const updatedOpportunity = await Opportunity.findByIdAndUpdate(
+        id,
+        req.body,
+        {
+          new: true,
+          runValidators: true,
+        }
+      );
+
+      if (!updatedOpportunity) {
+        return res.status(404).json({ message: "Opportunity not found" });
+      }
+
+      return res.status(200).json(updatedOpportunity);
     }
 
-    const updatedOpportunity = await Opportunity.findByIdAndUpdate(
-      id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      }
+    const index = inMemoryOpportunities.findIndex(
+      (item) => item._id === id || String(item.id) === id
     );
 
-    if (!updatedOpportunity) {
+    if (index === -1) {
       return res.status(404).json({ message: "Opportunity not found" });
     }
 
-    return res.status(200).json(updatedOpportunity);
+    inMemoryOpportunities[index] = {
+      ...inMemoryOpportunities[index],
+      ...req.body,
+      updatedAt: new Date().toISOString(),
+    };
+
+    return res.status(200).json(inMemoryOpportunities[index]);
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -132,17 +239,31 @@ const updateOpportunity = async (req, res) => {
 const deleteOpportunity = async (req, res) => {
   try {
     const { id } = req.params;
+    const isMongoConnected = mongoose.connection.readyState === 1;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid opportunity ID format" });
+    if (isMongoConnected) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: "Invalid opportunity ID format" });
+      }
+
+      const deletedOpportunity = await Opportunity.findByIdAndDelete(id);
+
+      if (!deletedOpportunity) {
+        return res.status(404).json({ message: "Opportunity not found" });
+      }
+
+      return res.status(200).json({ message: "Opportunity deleted successfully" });
     }
 
-    const deletedOpportunity = await Opportunity.findByIdAndDelete(id);
+    const index = inMemoryOpportunities.findIndex(
+      (item) => item._id === id || String(item.id) === id
+    );
 
-    if (!deletedOpportunity) {
+    if (index === -1) {
       return res.status(404).json({ message: "Opportunity not found" });
     }
 
+    inMemoryOpportunities.splice(index, 1);
     return res.status(200).json({ message: "Opportunity deleted successfully" });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });

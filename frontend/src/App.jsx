@@ -7,8 +7,6 @@ import ApplyForm from "./pages/ApplyForm";
 import Confirmation from "./pages/Confirmation";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminApplications from "./pages/AdminApplications";
-import DesignPreview from "./pages/DesignPreview";
-
 function App() {
   return (
     <Router>
@@ -22,7 +20,6 @@ function App() {
             <Route path="/confirmation" element={<Confirmation />} />
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/applications" element={<AdminApplications />} />
-            <Route path="/design-preview" element={<DesignPreview />} />
           </Routes>
         </main>
       </div>
